@@ -4,16 +4,22 @@ import { ICombatService } from "./ICombatService";
 
 export class CombatService implements ICombatService
 {
-	public constructor( private readonly repository: ICombatantRepository) {}
+	public constructor(private readonly repository: ICombatantRepository)
+	{
+	}
 
 	public attack(attackerId: string, targetId: string): number
 	{
 		assert(attackerId !== targetId, "A combatant cannot attack itself");
 
 		const attacker = this.getCombatant(attackerId);
-		const attackDamage = attacker.getAttackDamage();
 
-		return this.takeDamage(targetId, attackDamage);
+		if (attacker.isDead() || attacker.isBlocking())
+		{
+			return 0;
+		}
+
+		return this.takeDamage(targetId, attacker.getAttackDamage());
 	}
 
 	public block(combatantId: string, enabled: boolean): void
@@ -21,7 +27,6 @@ export class CombatService implements ICombatService
 		const combatant = this.getCombatant(combatantId);
 
 		combatant.setBlocking(enabled);
-
 		this.repository.save(combatant);
 	}
 

@@ -6,11 +6,17 @@ export class Combatant
 		private readonly id: string,
 		private health: number,
 		private readonly attackDamage: number,
+		private readonly blockingDamageMultiplier: number,
 	)
 	{
 		assert(id.size() > 0, "Id cannot be empty");
 		assert(health > 0, "Health must be greater than zero");
 		assert(attackDamage > 0, "Attack damage must be greater than zero");
+
+		assert(
+			blockingDamageMultiplier >= 0 && blockingDamageMultiplier <= 1,
+			"Blocking damage multiplier must be between zero and one",
+		);
 	}
 
 	public getId(): string
@@ -28,6 +34,11 @@ export class Combatant
 		return this.attackDamage;
 	}
 
+	public isBlocking(): boolean
+	{
+		return this.blocking;
+	}
+
 	public isDead(): boolean
 	{
 		return this.health <= 0;
@@ -35,6 +46,12 @@ export class Combatant
 
 	public setBlocking(enabled: boolean): void
 	{
+		if (this.isDead())
+		{
+			this.blocking = false;
+			return;
+		}
+
 		this.blocking = enabled;
 	}
 
@@ -48,15 +65,17 @@ export class Combatant
 		}
 
 		const finalDamage = this.blocking
-			? amount * 0.5
+			? amount * this.blockingDamageMultiplier
 			: amount;
 
-		const appliedDamage = math.min(
-			this.health,
-			finalDamage,
-		);
+		const appliedDamage = math.min(this.health, finalDamage);
 
 		this.health -= appliedDamage;
+
+		if (this.isDead())
+		{
+			this.blocking = false;
+		}
 
 		return appliedDamage;
 	}

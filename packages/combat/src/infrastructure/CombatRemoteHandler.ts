@@ -9,6 +9,7 @@ const Workspace = game.GetService("Workspace");
 export class CombatRemoteHandler
 {
 	private static readonly ATTACK_REMOTE_NAME = "AttackRequest";
+	private static readonly BLOCK_REMOTE_NAME = "BlockRequest";
 
 	private readonly lastAttackTimes = new Map<Player, number>();
 	private started = false;
@@ -24,44 +25,25 @@ export class CombatRemoteHandler
 	public start(): void
 	{
 		assert(!this.started, "CombatRemoteHandler has already been started");
-
 		this.started = true;
 
-		const attackRemote = this.getOrCreateAttackRemote();
+		const attackRemote = this.getOrCreateRemote(CombatRemoteHandler.ATTACK_REMOTE_NAME);
+		const blockRemote = this.getOrCreateRemote(CombatRemoteHandler.BLOCK_REMOTE_NAME);
 
 		attackRemote.OnServerEvent.Connect((player: Player, targetValue: unknown) =>
 		{
 			this.handleAttackRequest(player, targetValue);
 		});
 
+		blockRemote.OnServerEvent.Connect((player: Player, enabledValue: unknown) =>
+		{
+			this.handleBlockRequest(player, enabledValue);
+		});
+
 		Players.PlayerRemoving.Connect((player: Player) =>
 		{
 			this.lastAttackTimes.delete(player);
 		});
-	}
-
-	private getOrCreateAttackRemote(): RemoteEvent
-	{
-		const existingRemote = ReplicatedStorage.FindFirstChild(
-			CombatRemoteHandler.ATTACK_REMOTE_NAME,
-		);
-
-		if (existingRemote !== undefined)
-		{
-			assert(
-				existingRemote.IsA("RemoteEvent"),
-				`${CombatRemoteHandler.ATTACK_REMOTE_NAME} must be a RemoteEvent`,
-			);
-
-			return existingRemote;
-		}
-
-		const attackRemote = new Instance("RemoteEvent");
-
-		attackRemote.Name = CombatRemoteHandler.ATTACK_REMOTE_NAME;
-		attackRemote.Parent = ReplicatedStorage;
-
-		return attackRemote;
 	}
 
 	private handleAttackRequest(player: Player, targetValue: unknown): void
@@ -72,13 +54,12 @@ export class CombatRemoteHandler
 		}
 
 		const targetModel = targetValue;
+		const character = player.Character;
 
 		if (!targetModel.IsDescendantOf(Workspace))
 		{
 			return;
 		}
-
-		const character = player.Character;
 
 		if (character === undefined || targetModel === character)
 		{
@@ -112,10 +93,31 @@ export class CombatRemoteHandler
 			return;
 		}
 
+		if (attacker.isBlocking())
+		{
+			return;
+		}
+
+		if (this.isFriendlyFireBlocked(player, targetModel))
+		{
+			if (this.configuration.debug)
+			{
+				print(`${player.Name} could not attack a teammate`);
+			}
+
+			return;
+		}
+
 		const attackerRoot = this.getRootPart(character);
 		const targetRoot = this.getRootPart(targetModel);
+		const targetHumanoid = targetModel.FindFirstChildWhichIsA("Humanoid");
 
-		if (attackerRoot === undefined || targetRoot === undefined)
+		if (attackerRoot === undefined || targetRoot === undefined || targetHumanoid === undefined)
+		{
+			return;
+		}
+
+		if (targetHumanoid.Health <= 0)
 		{
 			return;
 		}
@@ -145,12 +147,7 @@ export class CombatRemoteHandler
 			return;
 		}
 
-		const humanoid = targetModel.FindFirstChildWhichIsA("Humanoid");
-
-		if (humanoid !== undefined)
-		{
-			humanoid.Health = updatedTarget.getHealth();
-		}
+		targetHumanoid.Health = math.max(0, updatedTarget.getHealth());
 
 		if (this.configuration.debug)
 		{
@@ -158,6 +155,69 @@ export class CombatRemoteHandler
 			print(`Applied damage: ${appliedDamage}`);
 			print(`Remaining health: ${updatedTarget.getHealth()}`);
 		}
+	}
+
+	private handleBlockRequest(player: Player, enabledValue: unknown): void
+	{
+		if (!typeIs(enabledValue, "boolean"))
+		{
+			return;
+		}
+
+		const combatantId = tostring(player.UserId);
+		const combatant = this.repository.findById(combatantId);
+
+		if (combatant === undefined)
+		{
+			return;
+		}
+
+		if (combatant.isDead())
+		{
+			if (combatant.isBlocking())
+			{
+				this.combatService.block(combatantId, false);
+			}
+
+			return;
+		}
+
+		this.combatService.block(combatantId, enabledValue);
+
+		if (this.configuration.debug)
+		{
+			print(`${player.Name} blocking: ${enabledValue}`);
+		}
+	}
+
+	private isFriendlyFireBlocked(attacker: Player, targetModel: Model): boolean
+	{
+		if (this.configuration.friendlyFire)
+		{
+			return false;
+		}
+
+		const targetPlayer = Players.GetPlayerFromCharacter(targetModel);
+
+		if (targetPlayer === undefined)
+		{
+			return false;
+		}
+
+		if (attacker.Neutral || targetPlayer.Neutral)
+		{
+			return false;
+		}
+
+		const attackerTeam = attacker.Team;
+		const targetTeam = targetPlayer.Team;
+
+		if (attackerTeam === undefined || targetTeam === undefined)
+		{
+			return false;
+		}
+
+		return attackerTeam === targetTeam;
 	}
 
 	private isAttackOnCooldown(player: Player): boolean
@@ -176,6 +236,24 @@ export class CombatRemoteHandler
 		this.lastAttackTimes.set(player, currentTime);
 
 		return false;
+	}
+
+	private getOrCreateRemote(name: string): RemoteEvent
+	{
+		const existingRemote = ReplicatedStorage.FindFirstChild(name);
+
+		if (existingRemote !== undefined)
+		{
+			assert(existingRemote.IsA("RemoteEvent"), `${name} must be a RemoteEvent`);
+			return existingRemote;
+		}
+
+		const remoteEvent = new Instance("RemoteEvent");
+
+		remoteEvent.Name = name;
+		remoteEvent.Parent = ReplicatedStorage;
+
+		return remoteEvent;
 	}
 
 	private getRootPart(model: Model): BasePart | undefined

@@ -31,22 +31,22 @@ export class CombatModelLoader
 
 		this.started = true;
 
-		CollectionService.GetInstanceAddedSignal(
-			CombatModelLoader.COMBATANT_TAG,
-		).Connect((instance: Instance) =>
-		{
-			task.spawn(() =>
+		CollectionService
+			.GetInstanceAddedSignal(CombatModelLoader.COMBATANT_TAG)
+			.Connect((instance: Instance) =>
 			{
-				this.registerInstance(instance);
+				task.spawn(() =>
+				{
+					this.registerInstance(instance);
+				});
 			});
-		});
 
-		CollectionService.GetInstanceRemovedSignal(
-			CombatModelLoader.COMBATANT_TAG,
-		).Connect((instance: Instance) =>
-		{
-			this.unregisterInstance(instance);
-		});
+		CollectionService
+			.GetInstanceRemovedSignal(CombatModelLoader.COMBATANT_TAG)
+			.Connect((instance: Instance) =>
+			{
+				this.unregisterInstance(instance);
+			});
 
 		for (const instance of CollectionService.GetTagged(CombatModelLoader.COMBATANT_TAG))
 		{
@@ -116,7 +116,12 @@ export class CombatModelLoader
 			this.configuration.defaultAttackDamage,
 		);
 
-		const combatant = new Combatant(combatantId, maxHealth, attackDamage);
+		const combatant = new Combatant(
+			combatantId,
+			maxHealth,
+			attackDamage,
+			this.configuration.blockingDamageMultiplier,
+		);
 
 		this.repository.add(combatant);
 		this.registeredModels.set(model, combatantId);
@@ -199,7 +204,9 @@ export class CombatModelLoader
 			return;
 		}
 
+		combatant.setBlocking(false);
 		combatant.takeDamage(combatant.getHealth());
+
 		this.repository.save(combatant);
 
 		if (this.configuration.debug)
@@ -210,9 +217,7 @@ export class CombatModelLoader
 
 	private getOrCreateCombatantId(model: Model): string
 	{
-		const existingId = model.GetAttribute(
-			CombatModelLoader.COMBATANT_ID_ATTRIBUTE,
-		);
+		const existingId = model.GetAttribute(CombatModelLoader.COMBATANT_ID_ATTRIBUTE);
 
 		if (typeIs(existingId, "string") && existingId.size() > 0)
 		{
@@ -221,10 +226,7 @@ export class CombatModelLoader
 
 		const generatedId = `model-${HttpService.GenerateGUID(false)}`;
 
-		model.SetAttribute(
-			CombatModelLoader.COMBATANT_ID_ATTRIBUTE,
-			generatedId,
-		);
+		model.SetAttribute(CombatModelLoader.COMBATANT_ID_ATTRIBUTE, generatedId);
 
 		return generatedId;
 	}

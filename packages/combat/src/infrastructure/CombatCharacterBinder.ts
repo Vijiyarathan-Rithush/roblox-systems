@@ -52,15 +52,21 @@ export class CombatCharacterBinder
 			this.bindCharacter(player, character);
 		});
 
-		if (player.Character !== undefined)
+		const character = player.Character;
+
+		if (character !== undefined)
 		{
-			this.bindCharacter(player, player.Character);
+			this.bindCharacter(player, character);
 		}
 	}
 
 	private bindCharacter(player: Player, character: Model): void
 	{
 		const combatant = this.getOrResetCombatant(player);
+
+		combatant.setBlocking(false);
+		this.repository.save(combatant);
+
 		const humanoidInstance = character.WaitForChild("Humanoid", 10);
 
 		if (humanoidInstance === undefined || !humanoidInstance.IsA("Humanoid"))
@@ -104,6 +110,7 @@ export class CombatCharacterBinder
 			combatantId,
 			this.configuration.defaultHealth,
 			this.configuration.defaultAttackDamage,
+			this.configuration.blockingDamageMultiplier,
 		);
 
 		this.repository.add(combatant);
@@ -120,7 +127,9 @@ export class CombatCharacterBinder
 			return;
 		}
 
+		combatant.setBlocking(false);
 		combatant.takeDamage(combatant.getHealth());
+
 		this.repository.save(combatant);
 
 		if (this.configuration.debug)

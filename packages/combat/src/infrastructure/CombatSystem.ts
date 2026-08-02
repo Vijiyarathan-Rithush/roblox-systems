@@ -12,9 +12,11 @@ import { PlayerCombatLoader } from "./PlayerCombatLoader";
 
 const RunService = game.GetService("RunService");
 
+type CombatSystemState = "stopped" | "starting" | "started" | "failed";
+
 export class CombatSystem
 {
-	private static started = false;
+	private static state: CombatSystemState = "stopped";
 
 	private static configuration: CombatConfiguration | undefined;
 	private static repository: ICombatantRepository | undefined;
@@ -32,26 +34,52 @@ export class CombatSystem
 
 	public static start(): void
 	{
-		if (CombatSystem.started)
+		if (CombatSystem.state === "started")
 		{
 			return;
 		}
 
-		CombatSystem.started = true;
-
-		if (RunService.IsServer())
+		if (CombatSystem.state === "starting")
 		{
-			CombatSystem.startServer();
+			CombatSystem.waitForStartup();
 			return;
 		}
 
-		if (RunService.IsClient())
-		{
-			CombatSystem.startClient();
-			return;
-		}
+		assert(
+			CombatSystem.state !== "failed",
+			"CombatSystem startup previously failed. Restart the current Roblox session.",
+		);
 
-		error("CombatSystem could not determine the runtime environment");
+		CombatSystem.state = "starting";
+
+		let startupCompleted = false;
+
+		try
+		{
+			if (RunService.IsServer())
+			{
+				CombatSystem.startServer();
+			}
+			else if (RunService.IsClient())
+			{
+				CombatSystem.startClient();
+			}
+			else
+			{
+				error("CombatSystem could not determine the runtime environment");
+			}
+
+			startupCompleted = true;
+		}
+		finally
+		{
+			CombatSystem.state = startupCompleted ? "started" : "failed";
+		}
+	}
+
+	public static isStarted(): boolean
+	{
+		return CombatSystem.state === "started";
 	}
 
 	public static getService(): ICombatService
@@ -90,14 +118,29 @@ export class CombatSystem
 		return configuration;
 	}
 
+	private static waitForStartup(): void
+	{
+		while (CombatSystem.state === "starting")
+		{
+			task.wait();
+		}
+
+		assert(
+			CombatSystem.state === "started",
+			"CombatSystem startup failed in another execution thread",
+		);
+	}
+
 	private static startServer(): void
 	{
 		const configuration = new CombatConfigurationLoader().load();
 		const repository = new MemoryCombatantRepository();
 		const combatService = new CombatService(repository);
+
 		const playerCombatLoader = new PlayerCombatLoader(repository, configuration);
 		const characterBinder = new CombatCharacterBinder(repository, configuration);
 		const modelLoader = new CombatModelLoader(repository, configuration);
+
 		const remoteHandler = new CombatRemoteHandler(
 			repository,
 			combatService,

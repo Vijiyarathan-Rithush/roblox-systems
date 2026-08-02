@@ -5,8 +5,10 @@ const UserInputService = game.GetService("UserInputService");
 export class CombatInputHandler
 {
 	private static readonly ATTACK_REMOTE_NAME = "AttackRequest";
+	private static readonly BLOCK_REMOTE_NAME = "BlockRequest";
 
 	private started = false;
+	private blocking = false;
 
 	public start(): void
 	{
@@ -14,14 +16,20 @@ export class CombatInputHandler
 
 		this.started = true;
 
-		const attackRemote = this.getAttackRemote();
-		const player = Players.LocalPlayer;
-		const mouse = player.GetMouse();
+		const attackRemote = this.getRemote(CombatInputHandler.ATTACK_REMOTE_NAME);
+		const blockRemote = this.getRemote(CombatInputHandler.BLOCK_REMOTE_NAME);
+		const mouse = Players.LocalPlayer.GetMouse();
 
 		UserInputService.InputBegan.Connect((input: InputObject, gameProcessed: boolean) =>
 		{
 			if (gameProcessed)
 			{
+				return;
+			}
+
+			if (input.KeyCode === Enum.KeyCode.F)
+			{
+				this.setBlocking(blockRemote, true);
 				return;
 			}
 
@@ -46,24 +54,38 @@ export class CombatInputHandler
 
 			attackRemote.FireServer(targetModel);
 		});
+
+		UserInputService.InputEnded.Connect((input: InputObject) =>
+		{
+			if (input.KeyCode === Enum.KeyCode.F)
+			{
+				this.setBlocking(blockRemote, false);
+			}
+		});
+
+		UserInputService.WindowFocusReleased.Connect(() =>
+		{
+			this.setBlocking(blockRemote, false);
+		});
 	}
 
-	private getAttackRemote(): RemoteEvent
+	private setBlocking(blockRemote: RemoteEvent, enabled: boolean): void
 	{
-		const remoteInstance = ReplicatedStorage.WaitForChild(
-			CombatInputHandler.ATTACK_REMOTE_NAME,
-			10,
-		);
+		if (this.blocking === enabled)
+		{
+			return;
+		}
 
-		assert(
-			remoteInstance !== undefined,
-			`${CombatInputHandler.ATTACK_REMOTE_NAME} was not created by the server`,
-		);
+		this.blocking = enabled;
+		blockRemote.FireServer(enabled);
+	}
 
-		assert(
-			remoteInstance.IsA("RemoteEvent"),
-			`${CombatInputHandler.ATTACK_REMOTE_NAME} must be a RemoteEvent`,
-		);
+	private getRemote(name: string): RemoteEvent
+	{
+		const remoteInstance = ReplicatedStorage.WaitForChild(name, 10);
+
+		assert(remoteInstance !== undefined, `${name} was not created by the server`);
+		assert(remoteInstance.IsA("RemoteEvent"), `${name} must be a RemoteEvent`);
 
 		return remoteInstance;
 	}
